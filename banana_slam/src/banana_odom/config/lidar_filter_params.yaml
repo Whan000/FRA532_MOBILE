@@ -1,0 +1,25 @@
+# LIDAR Filter Node Configuration
+# Filters full scan ranges using empirically measured noise parameters
+
+lidar_filter_node:
+  ros__parameters:
+    # Empirically measured noise parameters from bag analysis
+    # These values come from analyze_lidar_noise.py output (90° measurement)
+    mean_distance: 1.029071450      # meters (expected range at 90°)
+    std_dev_distance: 0.003607501   # meters (measurement noise, σ ≈ 3.6mm)
+
+    # Filter configuration
+    filter_type: 'median'           # Options: 'median', 'gaussian', 'outlier_reject'
+    filter_window_size: 5           # Window size for sliding filter
+    outlier_threshold: 3.0          # Standard deviations for outlier rejection
+
+    # Topic names
+    scan_topic: '/scan'
+    output_topic: '/scan_filtered'
+
+# Notes:
+# - LIDAR noise (90°): Gaussian distribution (Jarque-Bera p-value: 0.728)
+# - Filter types:
+#   * 'median': Sliding window median (robust to outliers)
+#   * 'gaussian': Gaussian weighting by distance from empirical mean
+#   * 'outlier_reject': Replace outliers with neighborhood mean

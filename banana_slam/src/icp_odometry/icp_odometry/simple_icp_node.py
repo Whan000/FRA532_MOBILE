@@ -323,7 +323,6 @@ class SimpleICPNode(Node):
 
             local_map = np.vstack(local_map_points)
 
-     the map
             local_map = voxel_downsample(local_map, self.voxel_size)
 
 

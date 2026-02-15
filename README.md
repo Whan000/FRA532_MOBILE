@@ -18,7 +18,19 @@
 
 <p align="center"><em>Real-time SLAM demonstration with autonomous mapping and localization</em></p>
 
+## Overview
+
+This project implements and compares three progressive localization approaches for mobile robotics as part of **FRA532 Mobile Robotics** coursework. Using real TurtleBot3 sensor data, we build from basic sensor fusion to full SLAM with loop closure, analyzing trade-offs between accuracy, robustness, and computational efficiency.
+
+**Three-Stage Implementation:**
+1. **Part 1: EKF Odometry Fusion** - Wheel odometry + IMU sensor fusion using Extended Kalman Filter
+2. **Part 2: ICP Odometry Refinement** - Adaptive scan-to-map matching with quality-based fusion to assist EKF
+3. **Part 3: Full SLAM** - Global loop closure and occupancy grid mapping using SLAM Toolbox
+
 ## Table of Contents
+
+**Project Context**
+- [Overview](#overview)
 
 **Getting Started**
 - [Setup & Installation](#setup)
@@ -425,10 +437,6 @@ ros2 launch banana_odom full_slam_launch.py use_sim_time:=true
 
 This section presents a sensor fusion approach combining wheel odometry and IMU orientation using an Extended Kalman Filter (EKF). The wheel odometry provides position and velocity estimates through encoder measurements, while the IMU supplies heading corrections to compensate for accumulated drift.
 
-**References:**
-- Columbia University CS4733 - [ICR Kinematics](https://www.cs.columbia.edu/~allen/F17/NOTES/icckinematics.pdf)
-- Thrun et al. (2005) - Probabilistic Robotics, Chapter 7: Mobile Robot Localization
-
 ### 1.1 Wheel Odometry
 
 #### 1.1.1 Robot Parameters
@@ -442,11 +450,16 @@ The TurtleBot3 Burger robot is a differential drive platform with the following 
 
 #### 1.1.2 Wheel Displacement
 
-The wheel displacements are computed from encoder position changes measured in radians:
+The wheel displacements are obtained directly from the `/joint_states` topic, which provides **angular displacement** in radians. These are converted to linear distance by multiplying by wheel radius:
 
-$$\Delta s_r = \Delta \theta_r \cdot r, \quad \Delta s_l = \Delta \theta_l \cdot r$$
+$$\Delta s_r = [\text{position}_r(t) - \text{position}_r(t-1)] \times r$$
+$$\Delta s_l = [\text{position}_l(t) - \text{position}_l(t-1)] \times r$$
 
-where $\Delta \theta_r$ and $\Delta \theta_l$ represent the angular displacement of the right and left wheels obtained from the `/joint_states` topic.
+where $\Delta s_r$ and $\Delta s_l$ represent the **linear displacement** (in meters) of the right and left wheels, and $r$ is the wheel radius.
+
+**Note:** The TurtleBot3 `/joint_states` topic provides:
+- `position`: Angular displacement (radians) - multiply by wheel_radius to get linear distance
+- `velocity`: Linear velocity (m/s) - already in linear form, can be used directly
 
 #### 1.1.3 ICR (Instantaneous Center of Rotation) Kinematics
 
@@ -467,7 +480,8 @@ $$\Delta x = R \cdot \sin(\Delta \theta) = \frac{\Delta s_l + \Delta s_r}{2} \cd
 $$\Delta y = R \cdot (1 - \cos(\Delta \theta)) = \frac{\Delta s_l + \Delta s_r}{2} \cdot \frac{1 - \cos(\Delta \theta)}{\Delta \theta}$$
 
 For straight-line motion ($\Delta \theta \approx 0$):
-$$\Delta x = \frac{\Delta s_l + \Delta s_r}{2}, \quad \Delta y = 0$$
+$$\Delta x = \frac{\Delta s_l + \Delta s_r}{2}$$
+$$\Delta y = 0$$
 
 **Simplified implementation** (arc midpoint approximation):
 $$\Delta s = \frac{\Delta s_l + \Delta s_r}{2}$$
@@ -538,10 +552,10 @@ where $\mathbf{v}_t \sim \mathcal{N}(0, \mathbf{R})$ is measurement noise.
 **Measurement Jacobian:**
 $$\mathbf{H} = \frac{\partial h}{\partial \mathbf{x}} = \begin{bmatrix} 0 & 0 & 1 \end{bmatrix}$$
 
-**Innovation (measurement residual):**
+**Measurement error term:**
 $$\mathbf{y}_t = \mathbf{z}_t - h(\bar{\mathbf{x}}_t) = \mathbf{z}_t - \bar{\theta}_t$$
 
-**Innovation covariance:**
+**Measurement error term covariance:**
 $$\mathbf{S}_t = \mathbf{H} \bar{\mathbf{P}}_t \mathbf{H}^T + \mathbf{R}$$
 
 **Kalman gain:**
@@ -564,58 +578,11 @@ The complete EKF algorithm consists of two steps executed at each time step:
 4. Predict covariance: $\bar{\mathbf{P}}_t = \mathbf{F}_t \mathbf{P}_{t-1} \mathbf{F}_t^T + \mathbf{Q}$
 
 **Update Step** (triggered by IMU measurements):
-1. Compute innovation: $\mathbf{y}_t = \mathbf{z}_t - h(\bar{\mathbf{x}}_t)$
-2. Compute innovation covariance: $\mathbf{S}_t = \mathbf{H} \bar{\mathbf{P}}_t \mathbf{H}^T + \mathbf{R}$
+1. Compute measurement error term: $\mathbf{y}_t = \mathbf{z}_t - h(\bar{\mathbf{x}}_t)$
+2. Compute measurement error term covariance: $\mathbf{S}_t = \mathbf{H} \bar{\mathbf{P}}_t \mathbf{H}^T + \mathbf{R}$
 3. Compute Kalman gain: $\mathbf{K}_t = \bar{\mathbf{P}}_t \mathbf{H}^T \mathbf{S}_t^{-1}$
 4. Update state: $\mathbf{x}_t = \bar{\mathbf{x}}_t + \mathbf{K}_t \mathbf{y}_t$
 5. Update covariance: $\mathbf{P}_t = (\mathbf{I} - \mathbf{K}_t \mathbf{H}) \bar{\mathbf{P}}_t$
-
-#### 1.2.5 Noise Covariance Determination
-
-The noise covariance matrices $\mathbf{Q}$ and $\mathbf{R}$ are critical for filter performance. These parameters were determined using **empirical Gaussian distribution analysis** from live sensor data during actual robot motion.
-
-**Method:**
-
-1. **Data Collection**: Record sensor data during robot motion
-   - IMU gyro measurements (angular velocity)
-   - Wheel encoder velocities
-   - Duration: >30 seconds to capture motion dynamics
-
-2. **Statistical Analysis**: Compute Gaussian noise characteristics
-   ```bash
-   python3 analyze_sensor_noise.py --imu imu_data.csv --wheel wheel_data.csv
-   ```
-   - Calculate mean ($\mu$) and standard deviation ($\sigma$) for each sensor
-   - IMU gyro: $\mu = 0.0027$ rad/s, $\sigma = 0.0226$ rad/s
-   - Wheel rotation: $\mu = 0.0000$ rad/s, $\sigma = 0.0174$ rad/s
-
-   **Gaussian Distribution Visualization:**
-
-   The plot below shows the actual Gaussian noise distribution collected during the 3-second IMU calibration period (robot stationary). This visualization validates that the sensor noise follows a Gaussian distribution, justifying the use of Kalman filtering.
-
-   ![Gaussian Noise Distribution](banana_slam/images/noise.png)
-
-   The histogram confirms near-zero mean (unbiased sensor) and bounded standard deviation, with the fitted Gaussian curve showing the characteristic bell shape expected from white noise.
-
-3. **Parameter Mapping**:
-   - Measurement noise: $\mathbf{R} = \sigma_{imu}^2 = 0.0226^2 \approx 0.0005$
-   - Process noise (heading): $Q_{\theta\theta} = 0.0055$ (scaled from wheel rotation variance)
-   - Process noise (position): $Q_{xx} = Q_{yy} = 0.00001$ (small, position drift from velocity integration)
-
-4. **Responsiveness Tuning**:
-   - Ratio $Q_{\theta\theta}/R = 0.24$ means "trust IMU 4x more than wheel rotation"
-   - Higher ratio → more responsive to measurements (noisier)
-   - Lower ratio → smoother predictions (slower adaptation)
-
-**Critical Insight:** Motion-based noise characterization is **23.7x better** than stationary calibration!
-- Stationary params: 4.06m error
-- Motion-derived params: 0.17m error
-
-**Key Difference:**
-- **Stationary noise**: Only captures sensor electronics noise
-- **Motion noise**: Captures real-world dynamics (wheel slip, vibration, bumps, surface irregularities)
-
-**Result:** Live motion data provides realistic noise models that accurately represent sensor behavior during actual robot operation, leading to superior EKF performance.
 
 ### 1.3 Implementation Details
 
@@ -659,6 +626,38 @@ The noise covariance matrices $\mathbf{Q}$ and $\mathbf{R}$ are critical for fil
    - Publishes TF transform from `odom` to `base_footprint`
    - Enables visualization in RViz
 
+### 1.4 IMU Yaw Noise Characterization
+
+To determine the measurement noise covariance $R_{orientation}$ for the EKF, the IMU was recorded for 7 seconds while the robot remained completely stationary.
+
+<p align="center">
+  <img src="imu_yaw_noise_7sec_stationary.png" alt="IMU Yaw Noise Characterization" width="85%">
+</p>
+
+**Method:**
+1. Keep robot stationary (no motion)
+2. Record raw yaw orientation from IMU for 7 seconds (141 samples)
+3. Compute mean → subtract to isolate noise
+4. Fit Gaussian distribution to the residuals
+5. Use $\sigma$ as the measurement noise standard deviation
+
+**Results:**
+
+| Metric | Value |
+|--------|-------|
+| Mean yaw | $6.36 \times 10^{-4}$ rad |
+| Noise $\sigma$ | $0.000022$ rad |
+| Noise $\sigma^2$ | $4.84 \times 10^{-10}$ rad² |
+| Sample count | 141 samples / 7.0 s |
+| Gaussian (Jarque-Bera test) | YES ($p = 0.2988$) |
+
+**Conclusion:** The yaw noise is Gaussian-distributed with $\sigma = 0.000022$ rad, confirming the Gaussian noise assumption required by the EKF. The measurement covariance is set to:
+
+$$R_{orientation} = \sigma^2 = (0.000022)^2 \approx 4.84 \times 10^{-10} \text{ rad}^2$$
+
+
+---
+
 **Configuration File:** [`ekf_params.yaml`](src/banana_odom/config/ekf_params.yaml)
 
 ```yaml
@@ -690,57 +689,38 @@ ekf_node:
     odom_frame: 'odom'
     base_frame: 'base_footprint'
 ```
-
-### 1.4 Experimental Results
-
-#### 1.4.1 Performance Metrics
-
-**Note on Ground Truth:** No absolute ground truth is available for heading or position. Performance is assessed through filter consistency (innovation statistics) and relative comparison with SLAM output, not absolute accuracy measurements.
-
-The EKF performance is evaluated using internal consistency metrics:
-
-- **Innovation Statistics**: Measure filter consistency (should be zero-mean, bounded std)
-- **Filter Stability**: Covariance remains bounded (no divergence)
-- **Relative Drift**: Comparison against SLAM (also drifts, not absolute truth)
-
-**Qualitative Performance Ranking:**
-
-| Sequence | Filter Consistency | Relative Drift | Innovation Mean | Innovation Std | Notes |
-|----------|-------------------|----------------|-----------------|----------------|-------|
-| seq00 | Fair | Highest | ~0° | Higher | Worst: Sparse features, glass doors |
-| seq01 | Good | Moderate | ~0° | Moderate | Better: More features, aggressive motion |
-| seq02 | Good | Lowest | ~0° | Lower | Best: Rich features, stable motion |
-
-#### 1.4.2 Overall Performance Analysis
-
-**Key Findings:**
-
-1. **IMU Fusion Reduces Drift**: EKF with IMU significantly reduces heading drift compared to wheel odometry alone (observable in trajectory plots, not quantified without ground truth).
-
-2. **Unbiased Estimation**: Innovation mean near zero confirms the filter is properly calibrated and unbiased.
-
-3. **Motion-Based Tuning Critical**: Empirically-derived noise parameters from live motion data outperform stationary calibration by 23.7x (measured by prediction error during testing).
-
-**Performance Trends (Qualitative):**
-
-- **seq02 (Best)**: Smooth motion and rich features provide most stable filter performance
-- **seq01 (Better)**: Sharp turns and aggressive maneuvers increase innovation variance due to wheel slip
-- **seq00 (Worst)**: Sparse features and glass doors provide least geometric support for validation
-- **Filter remains unbiased**: Innovation mean stays near zero across all sequences (no systematic drift)
-
-**Conclusion:**
-
-The EKF sensor fusion provides heading stabilization through IMU fusion, reducing the unbounded rotational drift observed in wheel-only odometry. Empirical noise characterization from live motion data is critical for achieving optimal performance, providing 23.7x improvement over stationary calibration. Filter consistency (zero-mean innovation) validates proper tuning, though absolute accuracy cannot be quantified without ground truth.
-
 ---
 
 ## Part 2: ICP Odometry Refinement
 
 This section presents scan-matching based odometry refinement using the Iterative Closest Point (ICP) algorithm. While EKF provides heading correction through IMU fusion, position estimates still drift due to wheel slip and encoder noise. ICP refines the odometry by registering consecutive LiDAR scans, providing geometric constraints independent of wheel encoders.
 
-**References:**
-- Besl & McKay (1992) - [A Method for Registration of 3-D Shapes](https://graphics.stanford.edu/courses/cs164-09-spring/Handouts/paper_icp.pdf)
-- Pomerleau et al. (2015) - [Comparing ICP Variants on Real-World Data Sets](https://doi.org/10.1007/s10514-013-9327-2)
+### Why ICP Assists EKF (Not Standalone)
+
+**Pure ICP odometry fails catastrophically.** When used as the sole odometry source, ICP suffers from complete breakdown in feature-poor environments:
+
+<p align="center">
+  <img src="banana_slam/images/pureicp_odom.png" alt="Pure ICP Odometry Failure" width="70%">
+</p>
+
+<p align="center"><em>Pure ICP odometry exhibits severe drift and divergence - unusable as standalone solution</em></p>
+
+**Failure Modes of Standalone ICP:**
+- **Feature-poor environments**: Empty hallways, uniform walls → scan matching degenerates
+- **Glass surfaces**: Transparent obstacles cause sparse/missing point clouds → correspondence failures
+- **Geometric ambiguity**: Symmetric environments → local minima in optimization
+- **Accumulating errors**: Without continuous correction, small errors compound rapidly
+
+**Our Solution: Adaptive ICP-Assisted EKF Fusion**
+
+Instead of relying solely on ICP, we use **ICP as an intelligent correction layer** on top of robust EKF odometry:
+
+1. **EKF Foundation**: Fuses wheel odometry + IMU for continuous, drift-bounded pose estimation
+2. **ICP Refinement**: Provides geometric corrections when scan matching quality is high
+3. **Adaptive Quality Weighting**: Automatically reduces ICP influence when convergence is poor (low correspondence ratio, high residual error)
+4. **Graceful Degradation**: Falls back to pure EKF during ICP failures, maintaining pose continuity
+
+**Key Insight:** This hybrid approach combines the **consistency of EKF** with the **geometric accuracy of ICP** while avoiding catastrophic failures. When ICP works well (feature-rich environments), it corrects drift. When ICP fails (feature-poor regions), the system gracefully falls back to reliable EKF estimates.
 
 ### 2.1 ICP Problem Formulation
 
@@ -763,24 +743,6 @@ $$R = \begin{bmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{b
 
 This gives a 3-DOF pose: $(t_x, t_y, \theta)$.
 
-### 2.2 ICP Algorithm
-
-The ICP algorithm iteratively refines the transformation estimate through alternating correspondence and transformation steps:
-
-**Algorithm:**
-
-1. **Initialization**: Set initial guess $T_0 = (R_0, t_0)$ from EKF prediction
-2. **Repeat** until convergence:
-   a. **Correspondence**: For each point $p_i$ in source, find nearest neighbor $q_i$ in target
-   b. **Transformation**: Solve for optimal $(R, t)$ given correspondences
-   c. **Apply**: Transform source points: $p_i \leftarrow Rp_i + t$
-   d. **Check**: If $|E_{k} - E_{k-1}| < \epsilon$, converged
-3. **Return**: Accumulated transformation $T = (R, t)$
-
-**Convergence criteria:**
-- Maximum iterations: 50
-- Tolerance: $\epsilon = 10^{-6}$
-- Mean correspondence error change threshold
 
 ### 2.3 Nearest Neighbor Search for Correspondence
 
@@ -818,28 +780,31 @@ The point-to-point ICP variant minimizes Euclidean distances between correspondi
 
 **Algorithm:**
 
-1. **Find correspondences** using KD-tree
-2. **Filter outliers**:
-   - Remove correspondences with distance > max_correspondence_distance (0.3m)
-   - Apply 80th percentile trimming to remove geometric ambiguities
-3. **Compute centroids**:
-   $$   \bar{p} = \frac{1}{N} \sum_{i=1}^{N} p_i, \quad \bar{q} = \frac{1}{N} \sum_{i=1}^{N} q_i
-   ```
-4. **Center point clouds**:
-   $$P' = P - \bar{p}, \quad Q' = Q - \bar{q}$$
-5. **Cross-covariance matrix**:
-   $$H = P'^T Q'$$
-6. **SVD decomposition**:
+1. **Initialization**: Set initial guess $T_0 = (x_0, y_0, \theta_0)$ from EKF prediction
+2. **Repeat** until convergence (max 50 iterations, $\epsilon = 10^{-6}$):
+
+   a. **Correspondence**: For each source point $p_i$, find nearest neighbor $q_i$ in target using KD-tree
+
+   b. **Filter outliers**: Remove pairs with distance > 0.3m
+
+   c. **Compute centroids**:
+   $$\bar{p} = \frac{1}{N} \sum_{i=1}^{N} p_i, \quad \bar{q} = \frac{1}{N} \sum_{i=1}^{N} q_i$$
+
+   d. **Cross-covariance matrix**:
+   $$H = (P - \bar{p})^T (Q - \bar{q})$$
+
+   e. **SVD decomposition**:
    $$H = U \Sigma V^T$$
-7. **Optimal rotation**:
-   $$R = V U^T$$
-   (If $\det(R) < 0$, flip sign of last column of $V$ to ensure proper rotation)
-8. **Optimal translation**:
-   $$t = \bar{q} - R\bar{p}$$
 
-**Accumulation:** The transformation is accumulated over iterations:
+   f. **Optimal rotation & translation**:
+   $$R = V U^T, \quad t = \bar{q} - R\bar{p}$$
+   (If $\det(R) < 0$, flip sign of last column of $V$)
 
-$$T_{total} = T_k \circ T_{k-1} \circ \cdots \circ T_1$$
+   g. **Apply transform**: $p_i \leftarrow R p_i + t$
+
+   h. **Check convergence**: If $|E_k - E_{k-1}| < \epsilon$, stop
+
+3. **Return**: Final pose $(x, y, \theta) = T_{init} + \sum_k (\delta x_k, \delta y_k, \delta\theta_k)$
 
 #### 2.4.1 Alternative Approach: LOAM Feature Extraction (Attempted and Abandoned)
 
@@ -909,7 +874,6 @@ After observing **3-6x worse performance** with feature-based ICP across all seq
 
 **Our Final Approach:**
 - Use **all filtered points** from the laser scan (dense matching)
-- Apply **voxel downsampling** to the accumulated local map (not individual scans)
 - Rely on **KD-tree optimization** and **outlier rejection** for computational efficiency and robustness
 - **Result**: 70-95% correspondence, 0.05-0.06m mean error, real-time performance
 
@@ -918,26 +882,6 @@ This design decision prioritizes **accuracy and robustness** in our specific ind
 **Reference:**
 - Zhang, J., & Singh, S. (2014). "LOAM: Lidar Odometry and Mapping in Real-time." *Robotics: Science and Systems Conference (RSS)*.
 
-### 2.5 Voxel Downsampling
-
-Voxel downsampling reduces point cloud density while preserving geometric structure, improving computational efficiency:
-
-**Algorithm:**
-
-1. Divide 3D space into voxel grid with size $v$ (e.g., 0.05m)
-2. Compute voxel index for each point:
-   $$   \text{voxel\_idx} = \lfloor \frac{\text{point}}{v} \rfloor
-   ```
-3. Group points by voxel index
-4. Replace each voxel with centroid of points:
-   $$\text{centroid} = \frac{1}{N_{voxel}} \sum_{i=1}^{N_{voxel}} p_i$$
-
-**Complexity:** $O(n)$ with hash-based grouping
-
-**Impact:**
-- Map downsampling: 6000 points → 600 points (10x reduction)
-- Scan preservation: No downsampling (preserves fine detail)
-- Performance: KD-tree build time reduced by 10x with minimal accuracy loss
 
 ### 2.6 Scan-to-Map Matching Strategy
 
@@ -957,7 +901,7 @@ Unlike scan-to-scan matching (current scan vs previous scan), our implementation
 | Robustness to noise | Poor | Excellent |
 | Rapid motion handling | Fails (large gaps) | Handles (persistent features) |
 | Drift accumulation | High | Lower (multi-view constraints) |
-| Computational cost | Low | Higher (mitigated by voxel + KD-tree) |
+| Computational cost | Low | Higher (mitigated by KD-tree) |
 
 **Keyframe Management:**
 - Distance threshold: 0.3m (reduced from 0.2m to match reference)
@@ -1004,12 +948,7 @@ $$\mathbf{x}_{final} = w_{ICP} \cdot \mathbf{x}_{ICP} + w_{EKF} \cdot \mathbf{x}
    - Uses `scipy.spatial.KDTree` for O(log n) queries
    - Dramatically faster than brute-force search
 
-2. **Voxel Downsampling**
-   - Applied to local map (0.05m voxel size)
-   - Reduces points 10x while preserving geometry
-   - Individual scans preserved (no downsampling)
-
-3. **80th Percentile Outlier Rejection**
+2. **Outlier Rejection**
    - Sorts correspondence distances
    - Keeps only bottom 80% (removes furthest 20%)
    - Eliminates geometric ambiguities and mismatches
@@ -1027,20 +966,19 @@ $$\mathbf{x}_{final} = w_{ICP} \cdot \mathbf{x}_{ICP} + w_{EKF} \cdot \mathbf{x}
 **Configuration File:** [`icp_params.yaml`](src/icp_odometry/config/icp_params.yaml)
 
 ```yaml
-icp_odometry_node:
+icp_node:
   ros__parameters:
     # ICP algorithm parameters
     max_iterations: 50
     tolerance: 1.0e-6
-    max_correspondence_distance: 0.3
+    max_correspondence_distance: 0.5
 
-    # Keyframe selection (optimized to match reference)
-    keyframe_distance: 0.3       # 0.3m (was 0.2m)
-    keyframe_angle: 0.174533     # 10° (was 0.2 rad = 11.5°)
-    max_local_scans: 15          # 15 keyframes (was 30)
+    # Keyframe selection
+    keyframe_distance: 0.05      # 5cm trigger distance
+    keyframe_angle: 0.0174533    # 1° trigger angle
+    max_local_scans: 15          # 15 keyframes in local map
 
-    # Voxel downsampling
-    voxel_size: 0.05             # 0.05m for map downsampling
+
 
     # ICP correction validation (stricter than before)
     max_correction_distance: 0.3
@@ -1062,7 +1000,6 @@ ICP performance is evaluated using:
 |--------|-------|-------|-------|
 | Correspondence Ratio | 85-95% | 70-90% | 90-95% |
 | Mean Error | 0.02-0.08m | 0.05-0.15m | 0.02-0.06m |
-| ICP Runtime | 2-3ms | 3-5ms | 2-4ms |
 | Keyframes Generated | ~190 | ~210 | ~200 |
 
 #### 2.9.2 Overall Performance Analysis
@@ -1137,26 +1074,26 @@ slam_toolbox:
     mode: mapping
 
     # Map parameters
-    resolution: 0.05              # Map resolution (m/pixel)
-    map_update_interval: 1.0      # Map update frequency (s)
+    resolution: 0.04              # Map resolution (m/pixel)
+    map_update_interval: 0.1      # Map update frequency (s)
 
     # Scan matching
     use_scan_matching: true
     use_scan_barycenter: true
     minimum_travel_distance: 0.3  # Keyframe distance threshold
-    minimum_travel_heading: 0.5   # Keyframe angle threshold
-    scan_buffer_size: 10
-    scan_buffer_maximum_scan_distance: 10.0
-    link_match_minimum_response_fine: 0.1
-    link_scan_maximum_distance: 1.5
+    minimum_travel_heading: 0.3   # Keyframe angle threshold (~17°)
+    scan_buffer_size: 20
+    scan_buffer_maximum_scan_distance: 5.0
+    link_match_minimum_response_fine: 0.2
+    link_scan_maximum_distance: 1.0
     loop_search_maximum_distance: 3.0
 
     # Loop closure
     do_loop_closing: true
     loop_match_minimum_chain_size: 10
-    loop_match_maximum_variance_coarse: 3.0
-    loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine: 0.45
+    loop_match_maximum_variance_coarse: 2.0
+    loop_match_minimum_response_coarse: 0.40
+    loop_match_minimum_response_fine: 0.50
 
     # Correlation parameters
     correlation_search_space_dimension: 0.5
@@ -1164,8 +1101,8 @@ slam_toolbox:
     correlation_search_space_smear_deviation: 0.1
 
     # Optimization
-    max_laser_range: 20.0
-    minimum_time_interval: 0.5
+    max_laser_range: 4.0
+    minimum_time_interval: 0.1
     transform_publish_period: 0.02
 
     # Topics
@@ -1209,10 +1146,6 @@ The `images/` folder contains comprehensive visualization outputs from all exper
 
 ![System Architecture Diagram](banana_slam/images/Diagram_fullodom.png)
 
-**Occupied Maps (SLAM Output):**
-- **occuseq00.png**: Occupancy grid map generated by SLAM Toolbox for sequence 00
-- **occuseq01.png**: Occupancy grid map generated by SLAM Toolbox for sequence 01
-- **occuseq02.png**: Occupancy grid map generated by SLAM Toolbox for sequence 02
 
 These maps show:
 - **Black cells**: Occupied space (walls, obstacles)
@@ -1234,10 +1167,6 @@ These maps show:
   </tr>
 </table>
 
-**Trajectory Comparison Plots:**
-- **seq00.png**: Multi-method trajectory overlay for sequence 00
-- **seq01.png**: Multi-method trajectory overlay for sequence 01
-- **seq02.png**: Multi-method trajectory overlay for sequence 02
 
 Each comparison plot contains four overlayed trajectories:
 1. **Pure Wheel Odometry** (blue): Baseline encoder-only dead reckoning showing unbounded drift
@@ -1258,11 +1187,6 @@ Each comparison plot contains four overlayed trajectories:
   </tr>
 </table>
 
-**SLAM Trajectory Paths:**
-- **seq00_slam.png**: Isolated SLAM Toolbox trajectory for sequence 00
-- **seq01_slam.png**: Isolated SLAM Toolbox trajectory for sequence 01
-- **seq02_slam.png**: Isolated SLAM Toolbox trajectory for sequence 02
-
 These visualizations show:
 - **Robot path**: Continuous line showing pose history
 - **Keyframe positions**: Points where scan matching occurred
@@ -1281,11 +1205,6 @@ These visualizations show:
     <td align="center"><em>Sequence 02</em></td>
   </tr>
 </table>
-
-**Animated Sequences:**
-- **seq0.gif**: Real-time playback of sequence 00 with SLAM Toolbox (7.0MB, animated visualization)
-- **seq1.gif**: Real-time playback of sequence 01 with SLAM Toolbox (7.0MB, animated visualization)
-- **seq2.gif**: Real-time playback of sequence 02 with SLAM Toolbox (7.0MB, animated visualization)
 
 Each GIF animation shows:
 - **Real-time mapping**: Progressive map construction as robot moves
@@ -1318,14 +1237,6 @@ To assess odometry performance, compare trajectories against SLAM ground truth:
    - EKF: Reduced rotational drift (IMU heading correction), persistent translational drift
    - ICP: Closest match to SLAM (geometric position refinement)
 3. **Loop Closure**: SLAM trajectories show sudden corrections when revisiting locations
-
-**Quality Indicators:**
-
-| Indicator | Excellent | Good | Poor |
-|-----------|-----------|------|------|
-| ICP-SLAM deviation | <10cm | 10-20cm | >30cm |
-| EKF heading error | <2° | 2-5° | >10° |
-| Loop closure correction | <5cm | 5-15cm | >30cm |
 
 **Map Consistency (Occupied Maps):**
 
@@ -1367,46 +1278,6 @@ Poor-quality maps show:
 - **Performance**: Best ICP quality, highest correspondence rates, stable fusion
 - **Key advantage**: Smooth motion + rich geometric features = ideal conditions
 
-### Generating Custom Visualizations
-
-To reproduce or generate additional plots:
-
-**Trajectory Comparison Plots:**
-```bash
-# Terminal 1: Run odometry pipeline
-ros2 launch banana_odom full_odom_launch.py use_sim_time:=true
-
-# Terminal 2: Play bag file
-ros2 bag play <sequence>.db3 --clock
-
-# Plots automatically saved to images/ upon completion
-```
-
-**Occupied Maps:**
-```bash
-# Terminal 1: Run SLAM Toolbox
-ros2 launch banana_odom full_slam_launch.py use_sim_time:=true
-
-# Terminal 2: Play bag file
-ros2 bag play <sequence>.db3 --clock
-
-# Terminal 3: Save map after completion
-ros2 run nav2_map_server map_saver_cli -f images/occuseq<XX>
-```
-
-**Animated GIFs:**
-```bash
-# Install screen recording tool
-sudo apt install ros-humble-rosbag2-storage-mcap byzanz
-
-# Record RViz window during playback
-byzanz-record --duration=<seconds> --x=<x> --y=<y> --width=<w> --height=<h> images/seq<X>.gif
-
-# OR use ROS 2 image topic recording
-ros2 run image_view video_recorder image:=/rviz/snapshot _filename:=images/seq<X>.avi
-ffmpeg -i images/seq<X>.avi -vf "fps=10,scale=800:-1" images/seq<X>.gif
-```
-
 ---
 
 ## Parameter Tuning Guide
@@ -1419,9 +1290,9 @@ This section provides practical guidance for adjusting system parameters to opti
 
 **Process Noise Covariance (Q):**
 ```yaml
-process_noise_x: 0.00001      # x position uncertainty growth
-process_noise_y: 0.00001      # y position uncertainty growth
-process_noise_theta: 0.00001  # heading uncertainty growth
+process_noise_x: 0.0001       # x position uncertainty growth
+process_noise_y: 0.0001       # y position uncertainty growth
+process_noise_theta: 0.0055   # heading uncertainty growth
 ```
 
 **Tuning strategy:**
@@ -1436,14 +1307,14 @@ process_noise_theta: 0.00001  # heading uncertainty growth
 
 **Measurement Noise Covariance (R):**
 ```yaml
-imu_noise_theta: 0.000001     # IMU heading measurement noise
+imu_noise_theta: 0.0226       # IMU heading measurement noise (from stationary characterization)
 ```
 
 **Tuning strategy:**
 1. **Collect stationary data**: Record IMU while robot is stationary
 2. **Compute variance**: Calculate standard deviation of gyro_z over 30+ seconds
 3. **Set R = σ²**: Use squared standard deviation
-4. **Validation**: Innovation should be zero-mean with std ≈ √R
+4. **Validation**: Measurement error term should be zero-mean with std ≈ √R
 
 **Critical ratio: Q/R (Responsiveness)**
 - **High ratio (>1.0)**: Trusts measurements more (fast adaptation, noisier)
@@ -1499,8 +1370,8 @@ min_correspondences: 30            # Minimum matches for valid ICP
 
 **Keyframe Selection:**
 ```yaml
-keyframe_distance: 0.3        # Distance threshold (meters)
-keyframe_angle: 0.174533      # Angle threshold (radians, 10°)
+keyframe_distance: 0.05       # Distance threshold (meters, 5cm)
+keyframe_angle: 0.0174533     # Angle threshold (radians, 1°)
 max_local_scans: 15           # Local map size (number of scans)
 ```
 
@@ -1518,17 +1389,6 @@ max_local_scans: 15           # Local map size (number of scans)
   - Fewer scans: Faster, risk insufficient overlap
   - Recommended: 10-20 scans (indoor), 20-30 (outdoor large spaces)
 
-**Voxel Downsampling:**
-```yaml
-voxel_size: 0.05              # Downsample resolution (meters)
-```
-
-**Tuning strategy:**
-- **Purpose**: Reduces point count while preserving structure
-- **Too large (>0.1m)**: Loss of geometric detail, poor accuracy
-- **Too small (<0.02m)**: Minimal reduction, wasted computation
-- **Recommended**: 0.03-0.07m (balance detail/speed)
-- **Validation**: Check point reduction (aim for 70-90% reduction)
 
 **Quality Thresholds:**
 ```yaml
@@ -1554,7 +1414,7 @@ max_correction_angle: 0.0873   # Maximum allowed rotation (radians, 5°)
 **Scan Matching:**
 ```yaml
 minimum_travel_distance: 0.3    # Keyframe distance (meters)
-minimum_travel_heading: 0.5     # Keyframe angle (radians, ~28°)
+minimum_travel_heading: 0.3     # Keyframe angle (radians, ~17°)
 ```
 
 **Tuning strategy:**
@@ -1566,7 +1426,7 @@ minimum_travel_heading: 0.5     # Keyframe angle (radians, ~28°)
 ```yaml
 do_loop_closing: true
 loop_search_maximum_distance: 3.0
-loop_match_minimum_response_fine: 0.45
+loop_match_minimum_response_fine: 0.50
 ```
 
 **Tuning strategy:**
@@ -1578,660 +1438,6 @@ loop_match_minimum_response_fine: 0.45
   - Higher (>0.6): Conservative, few false positives, misses valid loops
   - Lower (<0.3): Aggressive, more loops, risk false matches
   - Recommended: 0.4-0.5 (balanced precision/recall)
-
----
-
-## Troubleshooting Common Issues
-
-### Issue 1: High Heading Drift in EKF
-
-**Symptoms:**
-- Robot orientation diverges from ground truth despite IMU fusion
-- Heading error >5° after short distances (<10m)
-
-**Possible Causes:**
-1. **Incorrect IMU calibration**
-   - Check: `imu_calibration_duration` parameter (default 3s)
-   - Fix: Increase to 5-10s for better bias estimation
-   - Verify: Log should show "IMU calibration complete" with bias value
-
-2. **Poor Q/R ratio tuning**
-   - Check: `process_noise_theta` vs `imu_noise_theta`
-   - Fix: Run `analyze_sensor_noise.py` to determine empirical values
-   - Verify: Innovation statistics should be zero-mean
-
-3. **IMU mounting misalignment**
-   - Check: IMU frame orientation matches base_link
-   - Fix: Verify TF tree, adjust orientation transform if needed
-   - Verify: Static IMU should read [0, 0, 0] for angular_velocity
-
-**Solution Steps:**
-```bash
-# 1. Verify IMU data quality
-ros2 topic echo /imu --field angular_velocity.z
-
-# 2. Recalibrate noise parameters
-python3 analyze_sensor_noise.py
-
-# 3. Increase calibration duration
-# Edit ekf_params.yaml: imu_calibration_duration: 10.0
-
-# 4. Check TF tree
-ros2 run tf2_tools view_frames
-```
-
-### Issue 2: ICP Convergence Failures
-
-**Symptoms:**
-- Frequent "ICP rejected" warnings in logs
-- Magenta trajectory (ICP) diverges significantly from cyan (SLAM)
-- Low correspondence ratio (<30%)
-
-**Possible Causes:**
-1. **Insufficient geometric features**
-   - Environment: Long hallways, empty rooms, symmetric structures
-   - Fix: Increase `max_correspondence_distance` to 0.5-0.8m
-   - Alternative: Reduce `min_correspondences` to 20 (carefully, may reduce quality)
-
-2. **Incorrect sensor configuration**
-   - Check: LaserScan topic rate, range_max, angle_increment
-   - Fix: Verify `/scan_filtered` publishes clean data at 5 Hz
-   - Verify: `ros2 topic hz /scan_filtered` should show ~5 Hz
-
-3. **Excessive downsampling**
-   - Check: `voxel_size` parameter in ICP config
-   - Fix: Reduce to 0.03m for richer point clouds
-   - Verify: Log "X pts after voxel downsampling" (should keep 100-500 points)
-
-4. **Fast motion violating assumptions**
-   - Check: Robot velocity during failures
-   - Fix: Reduce keyframe thresholds to sample more frequently
-   - Alternative: Increase ICP `max_iterations` to 75-100
-
-**Solution Steps:**
-```bash
-# 1. Monitor ICP quality in real-time
-ros2 topic echo /odometry/ekf --field header
-
-# 2. Visualize scan matching in RViz
-ros2 run rviz2 rviz2 -d config/rviz/icp_debug.rviz
-
-# 3. Adjust correspondence threshold
-# Edit icp_params.yaml: max_correspondence_distance: 0.6
-
-# 4. Check scan data quality
-ros2 topic echo /scan_filtered --field ranges | head -n 50
-```
-
-### Issue 3: SLAM Map Inconsistencies
-
-**Symptoms:**
-- Doubled walls, blurry boundaries
-- Large corrections during loop closure (>1m)
-- Map appears "stretched" or distorted
-
-**Possible Causes:**
-1. **Poor odometry input**
-   - SLAM relies on wheel+IMU odometry for initial guess
-   - Fix: Improve EKF tuning before running SLAM
-   - Verify: EKF trajectory should be smooth without jumps
-
-2. **Insufficient loop closure constraints**
-   - Check: `do_loop_closing: true` in SLAM config
-   - Fix: Ensure `loop_search_maximum_distance` covers environment size
-   - Verify: Logs should show "Loop closure found" messages
-
-3. **Aggressive scan matching**
-   - Check: `minimum_travel_distance` and `minimum_travel_heading`
-   - Fix: Increase thresholds to reduce keyframe density
-   - Verify: Fewer keyframes = faster optimization, better consistency
-
-**Solution Steps:**
-```bash
-# 1. Verify odometry quality first
-ros2 topic echo /odometry/ekf
-
-# 2. Enable loop closure debugging
-# Edit mapper_params_online_async.yaml:
-#   do_loop_closing: true
-#   loop_search_maximum_distance: 10.0
-
-# 3. Increase keyframe thresholds
-# minimum_travel_distance: 0.5
-# minimum_travel_heading: 0.7
-
-# 4. Save and inspect map
-ros2 run nav2_map_server map_saver_cli -f debug_map
-```
-
-### Issue 4: Real-time Performance Degradation
-
-**Symptoms:**
-- System cannot keep up with sensor data rate
-- "Queue overflow" or "dropping messages" warnings
-- Delayed pose updates, laggy visualization
-
-**Possible Causes:**
-1. **Excessive ICP iterations**
-   - Check: Average iterations to convergence
-   - Fix: Reduce `max_iterations` to 30-40
-   - Verify: Monitor CPU usage (should be <50% per core)
-
-2. **Large local map size**
-   - Check: `max_local_scans` parameter
-   - Fix: Reduce to 10-12 scans
-   - Verify: KD-tree build time should be <5ms
-
-3. **Inefficient KD-tree usage**
-   - Check: Code uses scipy.spatial.KDTree
-   - Fix: Ensure KD-tree rebuilt only on keyframe addition, not every scan
-   - Verify: Profile with `ros2 topic hz` on all topics
-
-4. **Visualization overhead**
-   - Check: RViz consuming excessive CPU/GPU
-   - Fix: Disable point cloud visualization, reduce marker density
-   - Alternative: Run RViz on separate machine
-
-**Solution Steps:**
-```bash
-# 1. Profile topic rates
-ros2 topic hz /scan_filtered /odometry/ekf /odometry/icp
-
-# 2. Monitor CPU usage
-top -H -p $(pgrep -f ekf_node)
-
-# 3. Reduce ICP cost
-# Edit icp_params.yaml:
-#   max_iterations: 30
-#   max_local_scans: 10
-
-# 4. Disable expensive visualizations
-# In RViz: Uncheck PointCloud2 displays
-```
-
-### Issue 5: Compilation or Runtime Errors
-
-**Common Errors and Fixes:**
-
-**Error: "No module named 'scipy'"**
-```bash
-# Fix: Install Python dependencies
-pip3 install numpy scipy matplotlib
-
-# Or use apt (recommended for ROS 2)
-sudo apt install python3-scipy python3-numpy python3-matplotlib
-```
-
-**Error: "Could not find a package configuration file provided by 'slam_toolbox'"**
-```bash
-# Fix: Install SLAM Toolbox
-sudo apt install ros-humble-slam-toolbox
-source /opt/ros/humble/setup.bash
-```
-
-**Error: "TF transform timeout" or "Transform not available"**
-```bash
-# Fix: Check TF tree
-ros2 run tf2_tools view_frames
-evince frames.pdf
-
-# Verify required transforms exist:
-# - odom -> base_footprint (published by ekf_node)
-# - base_footprint -> laser (static, should exist)
-```
-
-**Error: "Bag file cannot be read"**
-```bash
-# Fix: Check bag format
-ros2 bag info <bag_file>.db3
-
-# Ensure use_sim_time:=true when playing bags
-ros2 launch banana_odom full_odom_launch.py use_sim_time:=true
-```
-
----
-
-## RViz Visualization Setup
-
-This section describes how to set up RViz for real-time monitoring and debugging of the odometry pipeline.
-
-### Basic Visualization
-
-**Launch RViz with preconfigured display:**
-```bash
-ros2 run rviz2 rviz2 -d src/banana_odom/config/rviz/odometry_comparison.rviz
-```
-
-**Essential displays:**
-1. **TF**: Shows coordinate frame relationships (odom → base_footprint → laser)
-2. **LaserScan** (/scan_filtered): Current filtered laser scan
-3. **Odometry trajectories**:
-   - /odometry/wheel (pure encoders)
-   - /odometry/ekf (wheel + IMU fusion)
-   - /odometry/icp (wheel + IMU + ICP refinement)
-4. **Map** (/map): SLAM Toolbox occupancy grid (if running)
-
-### Advanced Debugging Displays
-
-**Visualizing ICP Correspondences:**
-
-Add PointCloud2 displays:
-- **Source scan** (current): Topic `/icp/source_cloud`
-- **Target map** (keyframes): Topic `/icp/target_cloud`
-- **Matched pairs**: Topic `/icp/correspondences` (MarkerArray showing lines)
-
-Configuration:
-```yaml
-# In RViz: Add → By display type → PointCloud2
-Topic: /icp/source_cloud
-Style: Points
-Size: 0.05
-Color: [255, 0, 0] (red)
-
-# Repeat for target cloud with green color
-```
-
-**Visualizing EKF Uncertainty:**
-
-Add Odometry display with covariance:
-```yaml
-# In RViz: Odometry properties
-Topic: /odometry/ekf
-Covariance:
-  Position: true
-  Orientation: true
-  Position Color: [255, 255, 0, 128] (semi-transparent yellow)
-  Scale: 2.0
-```
-
-**Interpretation:**
-- Small ellipse: High confidence (good sensor data, slow motion)
-- Large ellipse: Low confidence (sensor noise, fast motion, wheel slip)
-- Elongated shape: Uncertainty direction (e.g., along corridor for scan-poor environments)
-
-### Custom RViz Configuration
-
-To save your custom display setup:
-1. **Configure displays**: Add/remove topics, adjust colors, styles
-2. **Set fixed frame**: Typically "odom" for odometry, "map" for SLAM
-3. **Save config**: File → Save Config As → `custom_config.rviz`
-4. **Reuse**: `ros2 run rviz2 rviz2 -d custom_config.rviz`
-
-**Recommended fixed frame per use case:**
-- **Odometry debugging**: Fixed frame = "odom" (watch robot move through sensor data)
-- **Mapping**: Fixed frame = "map" (stationary map, robot moves)
-- **Localization**: Fixed frame = "map" (verify global pose accuracy)
-
-### Performance Optimization for RViz
-
-If RViz causes lag:
-
-1. **Reduce point cloud density:**
-   ```yaml
-   # In LaserScan display properties
-   Style: Points (not Squares)
-   Size: 0.01 (smaller)
-   Decay Time: 0 (don't accumulate)
-   ```
-
-2. **Limit trajectory history:**
-   ```yaml
-   # In Odometry display properties
-   Keep: 1000 (reduce from 10000)
-   ```
-
-3. **Disable expensive displays:**
-   - Uncheck PointCloud2 if only need trajectory
-   - Disable Grid if not needed
-   - Reduce marker scale/alpha
-
-4. **Run RViz remotely:**
-   ```bash
-   # On visualization machine:
-   export ROS_DOMAIN_ID=<same_as_robot>
-   ros2 run rviz2 rviz2
-   ```
-
----
-
-## Performance Optimization Tips
-
-### Computational Performance
-
-**1. Optimize ICP Runtime:**
-
-Current bottleneck: Correspondence search
-
-**Improvements:**
-- **KD-tree already used**: O(log n) search complexity
-- **Further optimization**: Multi-threaded correspondence search
-  ```python
-  from concurrent.futures import ThreadPoolExecutor
-
-  def parallel_nearest_neighbor(source, target):
-      with ThreadPoolExecutor(max_workers=4) as executor:
-          distances = executor.map(lambda p: kdtree.query(p), source)
-      return list(distances)
-  ```
-
-- **GPU acceleration**: Use CUDA for distance computation (requires pycuda)
-- **Octree spatial hashing**: For outdoor large-scale maps
-
-**2. Reduce EKF Overhead:**
-
-Current: 3x3 matrix operations per prediction/update
-
-**Improvements:**
-- **Selective updates**: Only update when motion exceeds threshold
-  ```python
-  if delta_s < 0.01 and abs(delta_theta) < 0.01:
-      return  # Skip negligible motion
-  ```
-- **Fixed-point arithmetic**: For embedded platforms (Raspberry Pi)
-- **Vectorization**: Use numpy operations instead of loops
-
-**3. Memory Efficiency:**
-
-Current memory usage: ~100-200 MB (for 15 keyframe scans)
-
-**Improvements:**
-- **Keyframe decimation**: Keep every Nth scan instead of continuous queue
-- **Lazy map updates**: Rebuild KD-tree only when queried, not on every keyframe
-- **Scan compression**: Store in polar coordinates (r, θ) instead of (x, y)
-
-### Accuracy Optimization
-
-**1. Multi-Resolution ICP:**
-
-Start with coarse alignment, refine with dense scan:
-```python
-# Coarse alignment (voxel_size=0.1m, fast)
-R_coarse, t_coarse = icp(source, target, voxel_size=0.1, max_iter=10)
-
-# Fine refinement (voxel_size=0.02m, accurate)
-source_transformed = R_coarse @ source + t_coarse
-R_fine, t_fine = icp(source_transformed, target, voxel_size=0.02, max_iter=30)
-
-# Combine transformations
-R_total = R_fine @ R_coarse
-t_total = R_fine @ t_coarse + t_fine
-```
-
-**2. Weighted ICP (Feature-Based):**
-
-Prioritize geometrically informative points:
-```python
-# Compute point weights based on curvature
-weights = compute_curvature(scan)  # Higher for edges/corners
-
-# Modified ICP objective
-E = Σ w_i · ||p_i - R·q_i - t||²
-```
-
-**3. IMU-Aided ICP Initialization:**
-
-Use IMU-predicted orientation as initial guess:
-```python
-# Get IMU orientation change since last keyframe
-delta_theta_imu = integrate_gyro(imu_samples)
-
-# Initialize ICP with IMU heading
-R_init = rotation_matrix(delta_theta_imu)
-R_icp, t_icp = icp(source, target, R_init=R_init)
-```
-
-### Robustness Improvements
-
-**1. Adaptive Parameter Tuning:**
-
-Adjust parameters based on environment characteristics:
-```python
-def adapt_parameters(scan):
-    feature_density = count_edges(scan) / len(scan)
-
-    if feature_density > 0.3:  # Rich environment
-        max_correspondence_distance = 0.3  # Strict
-        min_correspondences = 50          # High quality
-    else:  # Sparse environment
-        max_correspondence_distance = 0.6  # Relaxed
-        min_correspondences = 20          # Lower threshold
-```
-
-**2. Multi-Hypothesis Tracking:**
-
-Maintain multiple pose estimates, select most consistent:
-```python
-hypotheses = []
-for init_angle in [-10°, -5°, 0°, 5°, 10°]:
-    R_init = rotation_matrix(init_angle)
-    R, t, error = icp(source, target, R_init=R_init)
-    hypotheses.append((R, t, error))
-
-# Select hypothesis with lowest error
-best_R, best_t, _ = min(hypotheses, key=lambda h: h[2])
-```
-
-**3. Outlier Rejection (RANSAC):**
-
-Robust transformation estimation:
-```python
-def icp_ransac(source, target, iterations=100):
-    best_inliers = 0
-    best_transform = None
-
-    for _ in range(iterations):
-        # Sample minimal subset (3 points for 2D rigid transform)
-        sample = random.sample(source, 3)
-
-        # Estimate transform
-        R, t = solve_rigid_transform(sample, find_correspondences(sample, target))
-
-        # Count inliers
-        errors = compute_errors(source, target, R, t)
-        inliers = np.sum(errors < threshold)
-
-        if inliers > best_inliers:
-            best_inliers = inliers
-            best_transform = (R, t)
-
-    return best_transform
-```
-
----
-
-## Advanced Usage Examples
-
-### Example 1: Custom Noise Calibration
-
-Determine optimal EKF noise parameters for your specific robot:
-
-```bash
-# 1. Collect stationary data (robot not moving)
-ros2 bag record /imu /joint_states -o stationary_calibration
-
-# 2. Collect motion data (drive robot in typical patterns)
-ros2 bag record /imu /joint_states -o motion_calibration
-
-# 3. Analyze both datasets
-python3 analyze_sensor_noise.py --bag stationary_calibration.db3 --output stationary_params.yaml
-python3 analyze_sensor_noise.py --bag motion_calibration.db3 --output motion_params.yaml
-
-# 4. Compare results
-diff stationary_params.yaml motion_params.yaml
-
-# 5. Use motion-based parameters (typically 10-50x better)
-cp motion_params.yaml src/banana_odom/config/ekf_params.yaml
-```
-
-**Expected output:**
-```yaml
-# stationary_params.yaml
-imu_noise_theta: 0.000015  # Low (robot still)
-process_noise_theta: 0.00001
-
-# motion_params.yaml
-imu_noise_theta: 0.000226  # 15x higher (realistic vibration)
-process_noise_theta: 0.00055  # 55x higher (wheel slip, dynamics)
-```
-
-### Example 2: Benchmarking ICP Algorithms
-
-Compare point-to-point vs point-to-line ICP:
-
-```python
-# scripts/benchmark_icp.py
-import time
-from icp_implementations import icp_point_to_point, icp_point_to_line
-
-# Load test scans
-source, target = load_scans("test_data/")
-
-# Benchmark point-to-point
-start = time.time()
-R_p2p, t_p2p, error_p2p = icp_point_to_point(source, target)
-time_p2p = time.time() - start
-
-# Benchmark point-to-line
-start = time.time()
-R_p2l, t_p2l, error_p2l = icp_point_to_line(source, target)
-time_p2l = time.time() - start
-
-print(f"Point-to-Point: {time_p2p*1000:.2f}ms, error={error_p2p:.4f}m")
-print(f"Point-to-Line: {time_p2l*1000:.2f}ms, error={error_p2l:.4f}m")
-```
-
-**Typical results:**
-```
-Point-to-Point: 3.24ms, error=0.0421m
-Point-to-Line: 2.18ms, error=0.0312m
-```
-
-### Example 3: Multi-Sequence Batch Processing
-
-Automate testing across all sequences:
-
-```bash
-#!/bin/bash
-# scripts/batch_evaluate.sh
-
-SEQUENCES=("seq00" "seq01" "seq02")
-METHODS=("ekf" "icp" "slam")
-
-for seq in "${SEQUENCES[@]}"; do
-    for method in "${METHODS[@]}"; do
-        echo "Processing $seq with $method..."
-
-        # Launch appropriate pipeline
-        ros2 launch banana_odom ${method}_launch.py use_sim_time:=true &
-        LAUNCH_PID=$!
-        sleep 5
-
-        # Play bag file
-        ros2 bag play data/${seq}.db3 --clock
-
-        # Wait for completion
-        wait $LAUNCH_PID
-
-        # Extract metrics
-        python3 scripts/extract_metrics.py \
-            --method $method \
-            --sequence $seq \
-            --output results/${seq}_${method}_metrics.json
-    done
-done
-
-# Generate comparison report
-python3 scripts/generate_report.py --input results/ --output final_report.pdf
-```
-
-### Example 4: Real-time Parameter Adjustment
-
-Dynamically adjust ICP thresholds during runtime:
-
-```python
-# scripts/adaptive_tuning_node.py
-import rclpy
-from rclpy.node import Node
-from rcl_interfaces.srv import SetParameters
-from rcl_interfaces.msg import Parameter, ParameterValue
-
-class AdaptiveTuner(Node):
-    def __init__(self):
-        super().__init__('adaptive_tuner')
-        self.icp_client = self.create_client(SetParameters, '/icp_node/set_parameters')
-
-    def adjust_for_environment(self, feature_density):
-        if feature_density < 0.2:  # Sparse (hallway)
-            self.set_param('max_correspondence_distance', 0.6)
-            self.set_param('min_correspondences', 20)
-        else:  # Rich (cluttered room)
-            self.set_param('max_correspondence_distance', 0.3)
-            self.set_param('min_correspondences', 50)
-
-    def set_param(self, name, value):
-        request = SetParameters.Request()
-        request.parameters = [
-            Parameter(name=name, value=ParameterValue(double_value=value))
-        ]
-        future = self.icp_client.call_async(request)
-        # Non-blocking parameter update
-```
-
-### Example 5: Loop Closure Detection with ICP
-
-Detect when robot returns to previous location:
-
-```python
-# scripts/loop_detector.py
-from scipy.spatial import KDTree
-
-class LoopDetector:
-    def __init__(self, distance_threshold=2.0):
-        self.keyframe_poses = []  # [(x, y, theta), ...]
-        self.keyframe_scans = []  # [scan1, scan2, ...]
-        self.distance_threshold = distance_threshold
-
-    def add_keyframe(self, pose, scan):
-        self.keyframe_poses.append(pose)
-        self.keyframe_scans.append(scan)
-
-    def detect_loop(self, current_pose, current_scan):
-        if len(self.keyframe_poses) < 10:
-            return None  # Need history
-
-        # Spatial search for nearby past poses
-        kdtree = KDTree([(p[0], p[1]) for p in self.keyframe_poses[:-10]])
-        distances, indices = kdtree.query([current_pose[0], current_pose[1]], k=5)
-
-        # Try ICP with nearby candidates
-        for idx in indices:
-            if distances[idx] < self.distance_threshold:
-                past_scan = self.keyframe_scans[idx]
-                R, t, error = icp(current_scan, past_scan)
-
-                if error < 0.05:  # Good match
-                    return {
-                        'current_idx': len(self.keyframe_poses),
-                        'matched_idx': idx,
-                        'transform': (R, t),
-                        'error': error
-                    }
-
-        return None  # No loop detected
-```
-
-**Usage:**
-```python
-detector = LoopDetector(distance_threshold=3.0)
-
-# During odometry
-if is_keyframe(pose):
-    loop_info = detector.detect_loop(current_pose, current_scan)
-    if loop_info:
-        print(f"Loop closure: frame {loop_info['current_idx']} ↔ {loop_info['matched_idx']}")
-        apply_loop_correction(loop_info['transform'])
-    detector.add_keyframe(current_pose, current_scan)
-```
 
 ---
 
@@ -2260,10 +1466,9 @@ if is_keyframe(pose):
 | Robustness | Poor (single scan noise) | Excellent (accumulated structure) |
 | Rapid motion | Fails (large spacing) | Handles (persistent features) |
 | Drift | High accumulation | Lower (multi-view constraints) |
-| Speed | Low cost | Higher (mitigated by voxel + KD-tree) |
+| Speed | Low cost | Higher (mitigated by KD-tree) |
 
 **Decision:** Scan-to-map chosen for robustness. Performance maintained via:
-- Voxel downsampling (10x point reduction)
 - KD-tree (O(log n) search)
 - Optimized keyframe count (15 vs 30)
 
@@ -2286,7 +1491,7 @@ Advantages:
 - Lower drift (multi-view constraints)
 
 Trade-off:
-- Higher computation mitigated by voxel downsampling + KD-tree
+- Higher computation mitigated by KD-tree optimization
 
 **Why Adaptive Blending Instead of Fixed Fusion?**
 
@@ -2314,7 +1519,7 @@ Benefits:
    - IMU fusion reduces unbounded rotational drift from wheel odometry
    - Motion-based noise calibration: 23.7x better than stationary
    - Real-time performance: 20 Hz
-   - Filter consistency validated through zero-mean innovation
+   - Filter consistency validated through zero-mean measurement error term
 
 2. **ICP Odometry Refinement (Part 2)**
    - Geometric position correction using scan-to-map matching

@@ -27,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'ekf_node = banana_odom.ekf_node:main',
+            'lidar_filter_node = banana_odom.lidar_filter_node:main',
             'trajectory_plotter = banana_odom.trajectory_plotter:main',
             'data_logger = banana_odom.data_logger:main',
             'plot_logs = banana_odom.plot_logs:main',

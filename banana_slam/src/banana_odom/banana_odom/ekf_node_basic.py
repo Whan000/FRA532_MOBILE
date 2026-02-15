@@ -8,16 +8,18 @@ EKF Odometry Node for FRA532 Lab 1.
 This node fuses multiple sensor inputs using an Extended Kalman Filter:
 - Wheel odometry (from /joint_states) - Prediction step
 - IMU data (from /imu) - Orientation update
-- ICP odometry (from /odometry/icp) - Pose correction from scan matching
+- LIDAR range (from /lidar/range_90deg) - Position constraint
 
 Data Flow (from diagram):
 - Wheel_Odom -> Noise Filter -> Wheel_Odom_CALIB -> Pose Estimation
 - IMU_RAW -> Calibration (3s @ Startup) -> IMU_CALIB -> Pose Estimation
-- LIDAR -> Filter -> /scan_filtered -> ICP_Node -> /odometry/icp -> Pose Estimation
+- LIDAR -> Filter -> LIDAR_FILT -> Pose Estimation
+- Pose Estimation -> Transformation Integration -> Lidar Mapping
 
 Empirical noise parameters derived from bag analysis (fibo_floor3_seq01):
 - Process noise: Q = diag([0.00551, 0.00551, 0.02948])
 - IMU measurement noise: R_imu = [0.127418]
+- LIDAR measurement noise: R_lidar = [0.00361²] (3.6mm precision)
 """
 
 import rclpy
@@ -32,6 +34,7 @@ from math import sin, cos, atan2, pi
 from sensor_msgs.msg import JointState, Imu
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import TransformStamped, Quaternion
+from std_msgs.msg import Float32
 from tf2_ros import TransformBroadcaster
 
 
@@ -113,10 +116,13 @@ class EKFOdometryNode(Node):
                 ('icp_noise_y', 0.00000001),
                 ('icp_noise_theta', 0.00000001),
                 ('imu_calibration_duration', 3.0),
+                ('lidar_noise_range', 0.00361),  # 3.6mm std dev from analysis
+                ('lidar_expected_range', 1.029),  # Expected range at 90° in meters
                 ('odom_frame', 'odom'),
                 ('base_frame', 'base_footprint'),
                 ('joint_states_topic', '/joint_states'),
                 ('imu_topic', '/imu'),
+                ('lidar_topic', '/lidar/range_90deg'),
                 ('icp_topic', '/odometry/icp'),
                 ('odom_output_topic', '/odometry/ekf'),
             ]
@@ -143,6 +149,9 @@ class EKFOdometryNode(Node):
         ])
 
         self.R_imu = np.array([[self.get_parameter('imu_noise_theta').value]])
+
+        self.R_lidar = np.array([[self.get_parameter('lidar_noise_range').value ** 2]])
+        self.lidar_expected_range = self.get_parameter('lidar_expected_range').value
 
         self.R_icp = np.diag([
             self.get_parameter('icp_noise_x').value,
@@ -192,6 +201,13 @@ class EKFOdometryNode(Node):
             Imu,
             self.get_parameter('imu_topic').value,
             self.imu_callback,
+            sensor_qos
+        )
+
+        self.lidar_sub = self.create_subscription(
+            Float32,
+            self.get_parameter('lidar_topic').value,
+            self.lidar_callback,
             sensor_qos
         )
 
@@ -348,6 +364,56 @@ class EKFOdometryNode(Node):
 
         I = np.eye(3)
         self.P = (I - K @ H) @ self.P
+
+    def lidar_callback(self, msg: Float32):
+        """
+        Process LIDAR range measurement for EKF update step.
+
+        LIDAR measures distance at 90° (perpendicular to robot).
+        This provides a position constraint: measured_range ≈ distance_from_robot_to_wall
+        """
+        try:
+            lidar_range = msg.data
+
+            # Validate measurement
+            if lidar_range <= 0 or np.isnan(lidar_range) or np.isinf(lidar_range):
+                self.get_logger().warn(f'Invalid LIDAR measurement: {lidar_range}')
+                return
+
+            # LIDAR measurement as constraint on position
+            # At 90°, LIDAR measures perpendicular distance
+            # For now, use it to estimate expected range consistency
+            z = np.array([lidar_range])
+            z_pred = np.array([self.lidar_expected_range])  # Expected range
+            y = z - z_pred
+
+            # Measurement model: H extracts range dimension
+            # In practice, this could be transformed based on robot position
+            H = np.array([[0.0, 0.0, 0.0]])  # LIDAR doesn't directly measure state
+            H = np.array([[1.0, 0.0, 0.0]])  # Alternative: use x position (distance from wall)
+
+            S = H @ self.P @ H.T + self.R_lidar
+
+            K = self.P @ H.T @ np.linalg.inv(S)
+
+            self.state = self.state + (K @ y).flatten()
+
+            I = np.eye(3)
+            self.P = (I - K @ H) @ self.P
+
+            # Log periodically
+            if not hasattr(self, 'lidar_log_counter'):
+                self.lidar_log_counter = 0
+            self.lidar_log_counter += 1
+
+            if self.lidar_log_counter % 20 == 0:
+                self.get_logger().info(
+                    f'LIDAR: range={lidar_range:.4f}m, expected={self.lidar_expected_range:.4f}m, '
+                    f'error={y[0]:.6f}m'
+                )
+
+        except Exception as e:
+            self.get_logger().error(f'Error processing LIDAR: {e}')
 
     def icp_callback(self, msg: Odometry):
         """Process ICP Odometry for EKF update step."""

@@ -59,6 +59,7 @@ core
 # *.png
 # *.jpg
 # *.gif
+.claude
 
 # Environment
 .env

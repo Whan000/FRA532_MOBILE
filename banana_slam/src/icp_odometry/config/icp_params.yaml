@@ -8,8 +8,8 @@ icp_node:
     feature_search_radius: 0.5
     ground_height_threshold: -0.15
     icp_odom_output_topic: /odometry/icp
-    keyframe_angle: 0.174533     # 10 degrees (match reference, was 0.2 rad)
-    keyframe_distance: 0.3       # Match reference (was 0.2m)
+    keyframe_angle: 0.0174533     
+    keyframe_distance: 0.05
     laser_frame: base_scan
     map_query_radius: 5.0
     map_update_angle: 0.2
@@ -18,7 +18,7 @@ icp_node:
     max_features_per_voxel: 10
     max_iterations: 50
     max_range: 3.5
-    min_range: 0.12
+    min_range: 0.0
     odom_frame: odom
     optimization_interval: 1
     planar_curvature_threshold: 0.01
@@ -35,6 +35,6 @@ lidar_filter_node:
     max_intensity: 100000.0
     max_range: 3.5
     min_intensity: 0.0
-    min_range: 0.12
+    min_range: 0.0
     scan_topic: /scan
     smoothing_window_size: 5

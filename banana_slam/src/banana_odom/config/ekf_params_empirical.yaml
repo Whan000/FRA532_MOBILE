@@ -1,0 +1,83 @@
+# EKF Node Configuration with Empirical Noise Parameters
+# Parameters measured from fibo_floor3_seq01 bag analysis
+
+ekf_node:
+  ros__parameters:
+    # Robot parameters
+    wheel_radius: 0.033                   # meters
+    wheel_separation: 0.160               # wheelbase in meters
+
+    # Empirically measured process noise (Q matrix)
+    # From analyze_sensor_noise.py - motion-based characterization
+    process_noise_x: 0.005510             # Translation noise
+    process_noise_y: 0.005510             # Translation noise
+    process_noise_theta: 0.029479         # Rotation noise
+
+    # IMU measurement noise (R_imu)
+    # Orientation from stationary period (pure sensor noise floor)
+    imu_noise_orientation: 0.000022       # rad std dev (from 7s stationary analysis)
+    # Gyro from motion analysis
+    imu_noise_theta: 0.127418             # rad/s std dev (from 390+ sec motion)
+
+    # LIDAR measurement noise (R_lidar)
+    # From analyze_lidar_noise.py - range measurement at 90°
+    lidar_noise_range: 0.003607501        # meters std dev (3.6mm)
+    lidar_expected_range: 1.029071450     # Expected range at 90° in meters
+
+    # ICP/SLAM measurement noise (R_icp)
+    # Conservative estimate for scan matching
+    icp_noise_x: 0.00000001
+    icp_noise_y: 0.00000001
+    icp_noise_theta: 0.00000001
+
+    # Initial covariance (P0)
+    initial_cov_x: 0.01
+    initial_cov_y: 0.01
+    initial_cov_theta: 0.01
+
+    # IMU calibration
+    imu_calibration_duration: 3.0         # seconds
+
+    # Frame names
+    odom_frame: 'odom'
+    base_frame: 'base_footprint'
+
+    # Topic names
+    joint_states_topic: '/joint_states'
+    imu_topic: '/imu'
+    lidar_topic: '/lidar/range_90deg'     # Output from lidar_filter_node
+    icp_topic: '/odometry/icp'
+    odom_output_topic: '/odometry/ekf'
+
+# Analysis Summary:
+# ================
+# STATIONARY PERIOD (First 7 seconds - pure sensor noise floor):
+# 1. IMU Yaw Orientation Measurement Noise
+#    - Std Dev: 0.000022 rad (±0.00126°)
+#    - Samples: 141 measurements from 7s stationary period
+#    - Distribution: Gaussian (Jarque-Bera p-value: 0.299) ✓
+#    - Represents: Pure intrinsic sensor noise independent of motion
+#
+# MOTION PERIOD (390+ seconds - dynamic noise characterization):
+# 2. IMU Gyro (angular velocity measurement)
+#    - Mean: -0.0161 rad/s
+#    - Std Dev: 0.1274 rad/s
+#    - Samples: 7855 from 390+ seconds of motion
+#    - 7-sec motion window: σ = 0.0457 rad/s (perfectly Gaussian)
+#
+# 3. Wheel Encoders (linear/angular velocity)
+#    - Linear velocity std: 0.0242 m/s
+#    - Angular velocity std: 0.1293 rad/s
+#    - Process noise computed from motion: 0.00551 m, 0.02948 rad
+#
+# 4. LIDAR Range at 90°
+#    - Mean: 1.0291 m
+#    - Std Dev: 0.00361 m (3.6mm - excellent precision!)
+#    - Distribution: Gaussian (p-value: 0.728)
+#    - Samples: 35 measurements in 7s window
+#
+# Key Insights:
+# - Stationary periods provide pure sensor measurement noise (0.000022 rad for orientation)
+# - Motion analysis captures real-world process noise and dynamic behavior
+# - Dual-tier approach provides comprehensive noise characterization for robust EKF tuning
+# - LIDAR is highly precise (3.6mm noise) and normally distributed
