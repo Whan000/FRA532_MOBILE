@@ -12,6 +12,12 @@
 ![Drive](https://img.shields.io/badge/Drive-Differential-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-brightgreen)
 
+<p align="center">
+  <img src="banana_slam/images/seq2.gif" alt="SLAM in Action - Real-time Mapping and Localization" width="80%">
+</p>
+
+<p align="center"><em>Real-time SLAM demonstration with autonomous mapping and localization</em></p>
+
 ## Table of Contents
 
 **Getting Started**
@@ -35,9 +41,6 @@
 - [RViz Visualization Setup](#rviz-visualization-setup)
 - [Performance Optimization Tips](#performance-optimization-tips)
 - [Advanced Usage Examples](#advanced-usage-examples)
-
-**Reference**
-- [References](#references)
 
 ---
 
@@ -441,9 +444,7 @@ The TurtleBot3 Burger robot is a differential drive platform with the following 
 
 The wheel displacements are computed from encoder position changes measured in radians:
 
-```math
-\Delta s_r = \Delta \theta_r \cdot r, \quad \Delta s_l = \Delta \theta_l \cdot r
-```
+$$\Delta s_r = \Delta \theta_r \cdot r, \quad \Delta s_l = \Delta \theta_l \cdot r$$
 
 where $\Delta \theta_r$ and $\Delta \theta_l$ represent the angular displacement of the right and left wheels obtained from the `/joint_states` topic.
 
@@ -453,41 +454,25 @@ For differential drive robots, the ICR method provides accurate pose integration
 
 **Heading change:**
 
-```math
-\Delta \theta = \frac{\Delta s_r - \Delta s_l}{b}
-```
+$$\Delta \theta = \frac{\Delta s_r - \Delta s_l}{b}$$
 
 **Turning radius:**
 
-```math
-R = \frac{b}{2} \cdot \frac{\Delta s_l + \Delta s_r}{\Delta s_r - \Delta s_l}
-```
+$$R = \frac{b}{2} \cdot \frac{\Delta s_l + \Delta s_r}{\Delta s_r - \Delta s_l}$$
 
 **Position update:**
 
 For curved motion ($\Delta \theta \neq 0$):
-```math
-\Delta x = R \cdot \sin(\Delta \theta) = \frac{\Delta s_l + \Delta s_r}{2} \cdot \frac{\sin(\Delta \theta)}{\Delta \theta}
-```
-```math
-\Delta y = R \cdot (1 - \cos(\Delta \theta)) = \frac{\Delta s_l + \Delta s_r}{2} \cdot \frac{1 - \cos(\Delta \theta)}{\Delta \theta}
-```
+$$\Delta x = R \cdot \sin(\Delta \theta) = \frac{\Delta s_l + \Delta s_r}{2} \cdot \frac{\sin(\Delta \theta)}{\Delta \theta}$$
+$$\Delta y = R \cdot (1 - \cos(\Delta \theta)) = \frac{\Delta s_l + \Delta s_r}{2} \cdot \frac{1 - \cos(\Delta \theta)}{\Delta \theta}$$
 
 For straight-line motion ($\Delta \theta \approx 0$):
-```math
-\Delta x = \frac{\Delta s_l + \Delta s_r}{2}, \quad \Delta y = 0
-```
+$$\Delta x = \frac{\Delta s_l + \Delta s_r}{2}, \quad \Delta y = 0$$
 
 **Simplified implementation** (arc midpoint approximation):
-```math
-\Delta s = \frac{\Delta s_l + \Delta s_r}{2}
-```
-```math
-\Delta x = \Delta s \cdot \cos(\theta + \frac{\Delta \theta}{2})
-```
-```math
-\Delta y = \Delta s \cdot \sin(\theta + \frac{\Delta \theta}{2})
-```
+$$\Delta s = \frac{\Delta s_l + \Delta s_r}{2}$$
+$$\Delta x = \Delta s \cdot \cos(\theta + \frac{\Delta \theta}{2})$$
+$$\Delta y = \Delta s \cdot \sin(\theta + \frac{\Delta \theta}{2})$$
 
 This approximation evaluates the robot's orientation at the midpoint of the arc, providing good accuracy for small time steps.
 
@@ -495,9 +480,7 @@ This approximation evaluates the robot's orientation at the midpoint of the arc,
 
 The robot's linear and angular velocities are computed as:
 
-```math
-v = \frac{\Delta s}{\Delta t}, \quad \omega = \frac{\Delta \theta}{\Delta t}
-```
+$$v = \frac{\Delta s}{\Delta t}, \quad \omega = \frac{\Delta \theta}{\Delta t}$$
 
 where $\Delta t$ is the time interval between encoder measurements.
 
@@ -507,9 +490,7 @@ where $\Delta t$ is the time interval between encoder measurements.
 
 The EKF state vector represents the robot's pose in the odometry frame:
 
-```math
-\mathbf{x} = \begin{bmatrix} x \\ y \\ \theta \end{bmatrix}
-```
+$$\mathbf{x} = \begin{bmatrix} x \\ y \\ \theta \end{bmatrix}$$
 
 where:
 - $x, y$: Position in the odometry frame (meters)
@@ -522,13 +503,11 @@ where:
 The motion model propagates the state based on wheel odometry measurements:
 
 **State transition function:**
-```math
-\mathbf{x}_{t} = g(\mathbf{x}_{t-1}, \mathbf{u}_t) = \begin{bmatrix}
+$$\mathbf{x}_{t} = g(\mathbf{x}_{t-1}, \mathbf{u}_t) = \begin{bmatrix}
 x + \Delta x \\
 y + \Delta y \\
 \theta + \Delta \theta
-\end{bmatrix}
-```
+\end{bmatrix}$$
 
 where the control input $\mathbf{u}_t = [v, \omega]^T$ is derived from wheel encoders.
 
@@ -536,18 +515,14 @@ where the control input $\mathbf{u}_t = [v, \omega]^T$ is derived from wheel enc
 
 The Jacobian matrix linearizes the nonlinear motion model around the current state:
 
-```math
-\mathbf{F}_t = \frac{\partial g}{\partial \mathbf{x}} = \begin{bmatrix}
+$$\mathbf{F}_t = \frac{\partial g}{\partial \mathbf{x}} = \begin{bmatrix}
 1 & 0 & -\Delta s \sin(\theta + \frac{\Delta \theta}{2}) \\
 0 & 1 & \Delta s \cos(\theta + \frac{\Delta \theta}{2}) \\
 0 & 0 & 1
-\end{bmatrix}
-```
+\end{bmatrix}$$
 
 **Covariance prediction:**
-```math
-\mathbf{P}_t = \mathbf{F}_t \mathbf{P}_{t-1} \mathbf{F}_t^T + \mathbf{Q}
-```
+$$\mathbf{P}_t = \mathbf{F}_t \mathbf{P}_{t-1} \mathbf{F}_t^T + \mathbf{Q}$$
 
 where $\mathbf{Q}$ is the process noise covariance matrix.
 
@@ -556,41 +531,27 @@ where $\mathbf{Q}$ is the process noise covariance matrix.
 The IMU provides heading measurements to correct accumulated wheel odometry drift:
 
 **Measurement function:**
-```math
-\mathbf{z}_t = h(\mathbf{x}_t) + \mathbf{v}_t = \theta + \mathbf{v}_t
-```
+$$\mathbf{z}_t = h(\mathbf{x}_t) + \mathbf{v}_t = \theta + \mathbf{v}_t$$
 
 where $\mathbf{v}_t \sim \mathcal{N}(0, \mathbf{R})$ is measurement noise.
 
 **Measurement Jacobian:**
-```math
-\mathbf{H} = \frac{\partial h}{\partial \mathbf{x}} = \begin{bmatrix} 0 & 0 & 1 \end{bmatrix}
-```
+$$\mathbf{H} = \frac{\partial h}{\partial \mathbf{x}} = \begin{bmatrix} 0 & 0 & 1 \end{bmatrix}$$
 
 **Innovation (measurement residual):**
-```math
-\mathbf{y}_t = \mathbf{z}_t - h(\bar{\mathbf{x}}_t) = \mathbf{z}_t - \bar{\theta}_t
-```
+$$\mathbf{y}_t = \mathbf{z}_t - h(\bar{\mathbf{x}}_t) = \mathbf{z}_t - \bar{\theta}_t$$
 
 **Innovation covariance:**
-```math
-\mathbf{S}_t = \mathbf{H} \bar{\mathbf{P}}_t \mathbf{H}^T + \mathbf{R}
-```
+$$\mathbf{S}_t = \mathbf{H} \bar{\mathbf{P}}_t \mathbf{H}^T + \mathbf{R}$$
 
 **Kalman gain:**
-```math
-\mathbf{K}_t = \bar{\mathbf{P}}_t \mathbf{H}^T \mathbf{S}_t^{-1}
-```
+$$\mathbf{K}_t = \bar{\mathbf{P}}_t \mathbf{H}^T \mathbf{S}_t^{-1}$$
 
 **State update:**
-```math
-\mathbf{x}_t = \bar{\mathbf{x}}_t + \mathbf{K}_t \mathbf{y}_t
-```
+$$\mathbf{x}_t = \bar{\mathbf{x}}_t + \mathbf{K}_t \mathbf{y}_t$$
 
 **Covariance update:**
-```math
-\mathbf{P}_t = (\mathbf{I} - \mathbf{K}_t \mathbf{H}) \bar{\mathbf{P}}_t
-```
+$$\mathbf{P}_t = (\mathbf{I} - \mathbf{K}_t \mathbf{H}) \bar{\mathbf{P}}_t$$
 
 #### 1.2.4 EKF Algorithm
 
@@ -790,9 +751,7 @@ This section presents scan-matching based odometry refinement using the Iterativ
 
 **Objective:** Find the rigid transformation $(R, t)$ that minimizes the sum of squared distances between corresponding points:
 
-```math
-E(R, t) = \frac{1}{N_p} \sum_{i=1}^{N_p} \| p_i - Rq_i - t \|^2
-```
+$$E(R, t) = \frac{1}{N_p} \sum_{i=1}^{N_p} \| p_i - Rq_i - t \|^2$$
 
 where $p_i$ and $q_i$ are corresponding points.
 
@@ -800,9 +759,7 @@ where $p_i$ and $q_i$ are corresponding points.
 
 The transformation is parameterized as:
 
-```math
-R = \begin{bmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{bmatrix}, \quad t = \begin{bmatrix} t_x \\ t_y \end{bmatrix}
-```
+$$R = \begin{bmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{bmatrix}, \quad t = \begin{bmatrix} t_x \\ t_y \end{bmatrix}$$
 
 This gives a 3-DOF pose: $(t_x, t_y, \theta)$.
 
@@ -866,35 +823,23 @@ The point-to-point ICP variant minimizes Euclidean distances between correspondi
    - Remove correspondences with distance > max_correspondence_distance (0.3m)
    - Apply 80th percentile trimming to remove geometric ambiguities
 3. **Compute centroids**:
-   ```math
-   \bar{p} = \frac{1}{N} \sum_{i=1}^{N} p_i, \quad \bar{q} = \frac{1}{N} \sum_{i=1}^{N} q_i
+   $$   \bar{p} = \frac{1}{N} \sum_{i=1}^{N} p_i, \quad \bar{q} = \frac{1}{N} \sum_{i=1}^{N} q_i
    ```
 4. **Center point clouds**:
-   ```math
-   P' = P - \bar{p}, \quad Q' = Q - \bar{q}
-   ```
+   $$P' = P - \bar{p}, \quad Q' = Q - \bar{q}$$
 5. **Cross-covariance matrix**:
-   ```math
-   H = P'^T Q'
-   ```
+   $$H = P'^T Q'$$
 6. **SVD decomposition**:
-   ```math
-   H = U \Sigma V^T
-   ```
+   $$H = U \Sigma V^T$$
 7. **Optimal rotation**:
-   ```math
-   R = V U^T
-   ```
+   $$R = V U^T$$
    (If $\det(R) < 0$, flip sign of last column of $V$ to ensure proper rotation)
 8. **Optimal translation**:
-   ```math
-   t = \bar{q} - R\bar{p}
-   ```
+   $$t = \bar{q} - R\bar{p}$$
 
 **Accumulation:** The transformation is accumulated over iterations:
-```math
-T_{total} = T_k \circ T_{k-1} \circ \cdots \circ T_1
-```
+
+$$T_{total} = T_k \circ T_{k-1} \circ \cdots \circ T_1$$
 
 #### 2.4.1 Alternative Approach: LOAM Feature Extraction (Attempted and Abandoned)
 
@@ -904,9 +849,7 @@ During development, we experimented with **LOAM-style feature extraction** (Zhan
 
 Feature points are defined as edge points and planar points based on local surface smoothness. The curvature metric $\mathcal{C}$ evaluates the smoothness of the local surface:
 
-```math
-\mathcal{C} = \frac{1}{|S| \cdot |\vec{X}_{(k,i)}^L|} \left\| \sum_{j \in S, j \neq i} \left( \vec{X}_{(k,i)}^L - \vec{X}_{(k,j)}^L \right) \right\|
-```
+$$\mathcal{C} = \frac{1}{|S| \cdot |\vec{X}_{(k,i)}^L|} \left\| \sum_{j \in S, j \neq i} \left( \vec{X}_{(k,i)}^L - \vec{X}_{(k,j)}^L \right) \right\|$$
 
 where:
 - $S$ is the set of consecutive points around point $i$ captured by the laser scanner
@@ -983,14 +926,11 @@ Voxel downsampling reduces point cloud density while preserving geometric struct
 
 1. Divide 3D space into voxel grid with size $v$ (e.g., 0.05m)
 2. Compute voxel index for each point:
-   ```math
-   \text{voxel\_idx} = \lfloor \frac{\text{point}}{v} \rfloor
+   $$   \text{voxel\_idx} = \lfloor \frac{\text{point}}{v} \rfloor
    ```
 3. Group points by voxel index
 4. Replace each voxel with centroid of points:
-   ```math
-   \text{centroid} = \frac{1}{N_{voxel}} \sum_{i=1}^{N_{voxel}} p_i
-   ```
+   $$\text{centroid} = \frac{1}{N_{voxel}} \sum_{i=1}^{N_{voxel}} p_i$$
 
 **Complexity:** $O(n)$ with hash-based grouping
 
@@ -1029,9 +969,8 @@ Unlike scan-to-scan matching (current scan vs previous scan), our implementation
 Instead of fixed blending (e.g., always 50% ICP + 50% EKF), our implementation uses **adaptive quality-based weighting**:
 
 **Quality Score Computation:**
-```math
-Q = w_c \cdot \text{correspondence\_ratio} + w_e \cdot (1 - \frac{\text{error}}{\text{max\_error}})
-```
+
+$$Q = w_c \cdot \text{correspondence\_ratio} + w_e \cdot (1 - \frac{\text{error}}{\text{max\_error}})$$
 
 where:
 - Correspondence ratio: percentage of points with valid matches
@@ -1053,9 +992,7 @@ where:
 - **Smooth transitions**: Gradual weight adjustment prevents discontinuities
 
 **Blended pose:**
-```math
-\mathbf{x}_{final} = w_{ICP} \cdot \mathbf{x}_{ICP} + w_{EKF} \cdot \mathbf{x}_{EKF}
-```
+$$\mathbf{x}_{final} = w_{ICP} \cdot \mathbf{x}_{ICP} + w_{EKF} \cdot \mathbf{x}_{EKF}$$
 
 ### 2.8 Implementation Details
 
@@ -2390,33 +2327,3 @@ Benefits:
    - Global consistency through loop closure
    - Occupancy grid mapping at 0.05m resolution
    - Asynchronous mode for real-time operation
-
-**Lessons Learned:**
-
-1. **Empirical calibration is critical**: Motion-based noise parameters outperform stationary calibration by 23.7x
-2. **Algorithm selection matters**: Scan-to-map ICP provides better robustness than scan-to-scan despite higher cost
-3. **Optimization enables real-time performance**: KD-tree reduces correspondence search from 100ms to 2-3ms
-4. **Adaptive fusion improves robustness**: Quality-based blending handles ICP failure gracefully
-5. **Parameter tuning has significant impact**: Matching reference parameters (15 keyframes, stricter thresholds) improved speed by 50%
-
----
-
-## References
-
-**EKF and Sensor Fusion:**
-- Thrun, S., Burgard, W., & Fox, D. (2005). *Probabilistic Robotics*. MIT Press.
-- Columbia University CS4733 - [ICR Kinematics](https://www.cs.columbia.edu/~allen/F17/NOTES/icckinematics.pdf)
-
-**ICP Algorithms:**
-- Besl, P. J., & McKay, N. D. (1992). *A Method for Registration of 3-D Shapes*. IEEE TPAMI, 14(2), 239-256.
-- Pomerleau, F., Colas, F., & Siegwart, R. (2015). *A Review of Point Cloud Registration Algorithms for Mobile Robotics*. Foundations and Trends in Robotics, 4(1), 1-104.
-- Segal, A., Haehnel, D., & Thrun, S. (2009). *Generalized-ICP*. Robotics: Science and Systems.
-
-**SLAM:**
-- Konolige, K., Grisetti, G., Kümmerle, R., Burgard, W., Limketkai, B., & Vincent, R. (2010). *Efficient Sparse Pose Adjustment for 2D mapping*. IROS.
-- Grisetti, G., Stachniss, C., & Burgard, W. (2007). *Improved Techniques for Grid Mapping with Rao-Blackwellized Particle Filters*. IEEE TRO, 23(1), 34-46.
-
-**Software:**
-- ROS 2 Humble - https://docs.ros.org/en/humble/
-- SLAM Toolbox - https://github.com/SteveMacenski/slam_toolbox
-- scipy.spatial.KDTree - https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.KDTree.html
