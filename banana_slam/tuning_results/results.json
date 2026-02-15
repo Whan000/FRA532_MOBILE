@@ -1,0 +1,83 @@
+{
+  "results": [
+    {
+      "strategy": "Pure Scan-to-Scan (pZ style)",
+      "params": {
+        "use_feature_extraction": false,
+        "use_pose_graph": false,
+        "max_correspondence_distance": 0.5,
+        "max_iterations": 50,
+        "keyframe_distance": 999.0,
+        "min_range": 0.12,
+        "max_range": 3.5,
+        "process_noise": 0.01,
+        "imu_noise": 0.1
+      },
+      "score": 1050.0,
+      "timestamp": "2026-02-14T20:45:00.257150"
+    },
+    {
+      "strategy": "Loose Correspondence",
+      "params": {
+        "use_feature_extraction": false,
+        "use_pose_graph": false,
+        "max_correspondence_distance": 0.7,
+        "max_iterations": 100,
+        "keyframe_distance": 999.0,
+        "min_range": 0.12,
+        "max_range": 3.5,
+        "process_noise": 0.01,
+        "imu_noise": 0.1
+      },
+      "score": 1870.0,
+      "timestamp": "2026-02-14T20:46:44.401332"
+    },
+    {
+      "strategy": "Trust EKF More",
+      "params": {
+        "use_feature_extraction": false,
+        "use_pose_graph": false,
+        "max_correspondence_distance": 0.5,
+        "max_iterations": 50,
+        "keyframe_distance": 999.0,
+        "min_range": 0.12,
+        "max_range": 3.5,
+        "process_noise": 0.001,
+        "imu_noise": 0.01
+      },
+      "score": 2435.0,
+      "timestamp": "2026-02-14T20:48:28.714667"
+    },
+    {
+      "strategy": "Keyframe (0.2m threshold)",
+      "params": {
+        "use_feature_extraction": false,
+        "use_pose_graph": false,
+        "max_correspondence_distance": 0.5,
+        "max_iterations": 50,
+        "keyframe_distance": 0.2,
+        "min_range": 0.12,
+        "max_range": 3.5,
+        "process_noise": 0.01,
+        "imu_noise": 0.1
+      },
+      "score": 1000.0,
+      "timestamp": "2026-02-14T20:50:12.822888"
+    }
+  ],
+  "best": {
+    "score": 1000.0,
+    "params": {
+      "use_feature_extraction": false,
+      "use_pose_graph": false,
+      "max_correspondence_distance": 0.5,
+      "max_iterations": 50,
+      "keyframe_distance": 0.2,
+      "min_range": 0.12,
+      "max_range": 3.5,
+      "process_noise": 0.01,
+      "imu_noise": 0.1
+    },
+    "strategy": "Keyframe (0.2m threshold)"
+  }
+}

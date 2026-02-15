@@ -1,0 +1,40 @@
+icp_node:
+  ros__parameters:
+    base_frame: base_link
+    covariance: 3.2e-05
+    edge_curvature_threshold: 0.05
+    edge_weight: 2.0
+    ekf_odom_topic: /odometry/ekf
+    feature_search_radius: 0.5
+    ground_height_threshold: -0.15
+    icp_odom_output_topic: /odometry/icp
+    keyframe_angle: 0.174533     # 10 degrees (match reference, was 0.2 rad)
+    keyframe_distance: 0.3       # Match reference (was 0.2m)
+    laser_frame: base_scan
+    map_query_radius: 5.0
+    map_update_angle: 0.2
+    map_update_distance: 0.3
+    max_correspondence_distance: 0.5
+    max_features_per_voxel: 10
+    max_iterations: 50
+    max_range: 3.5
+    min_range: 0.12
+    odom_frame: odom
+    optimization_interval: 1
+    planar_curvature_threshold: 0.01
+    planar_weight: 1.0
+    pose_graph_window_size: 10
+    scan_topic: /scan_filtered
+    tolerance: 1.0e-06
+    use_feature_extraction: false
+    use_pose_graph: false
+    voxel_size: 0.05
+lidar_filter_node:
+  ros__parameters:
+    filtered_scan_topic: /scan_filtered
+    max_intensity: 100000.0
+    max_range: 3.5
+    min_intensity: 0.0
+    min_range: 0.12
+    scan_topic: /scan
+    smoothing_window_size: 5

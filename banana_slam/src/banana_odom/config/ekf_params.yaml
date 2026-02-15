@@ -1,0 +1,21 @@
+ekf_node:
+  ros__parameters:
+    base_frame: base_footprint
+    icp_noise_theta: 0.001
+    icp_noise_x: 0.001
+    icp_noise_y: 0.001
+    icp_topic: /odometry/icp
+    imu_calibration_duration: 3.0
+    imu_noise_theta: 0.0226    # From live Gaussian viz (IMU σ = 0.0226 rad/s)
+    imu_topic: /imu
+    initial_cov_theta: 0.01
+    initial_cov_x: 0.01
+    initial_cov_y: 0.01
+    joint_states_topic: /joint_states
+    odom_frame: odom
+    odom_output_topic: /odometry/ekf
+    process_noise_theta: 0.0055  # Wheel σ * sqrt(dt) = 0.0174 * 0.316 (Wheel/IMU ratio 0.77x)
+    process_noise_x: 0.0001      # FIXED: was 0.01 (100x too high - caused 49m drift!)
+    process_noise_y: 0.0001      # FIXED: was 0.01 (100x too high - caused 49m drift!)
+    wheel_radius: 0.033
+    wheel_separation: 0.16

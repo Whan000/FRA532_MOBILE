@@ -1,0 +1,78 @@
+# ROS 2 Build Artifacts
+build/
+install/
+log/
+.colcon/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ROS Bags
+*.db3
+*.bag
+*.mcap
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# System Files
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Generated Documentation
+*.pdf
+frames.pdf
+
+# Temporary/Debug Files
+*.tmp
+*.bak
+*.backup
+core
+*.core
+
+# Large Output Files
+*.avi
+*.mp4
+*.mov
+
+# Custom outputs (keep images and specific files)
+# Uncomment if you want to ignore certain outputs
+# *.png
+# *.jpg
+# *.gif
+
+# Environment
+.env
+venv/
+env/
+ENV/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Compilation Results
+*.o
+*.a
+*.so.*
